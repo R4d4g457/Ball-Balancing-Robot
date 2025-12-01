@@ -9,8 +9,9 @@
 - Py: `python3 -m venv venv`
 - Py: `. venv/bin/activate`
 - Py: `pip install -r requirements.txt`
-- Py `sudo raspi-config` --
+- Py: `sudo raspi-config` --
 Interface Options → I2C → Enable, then reboot), or edit `/boot/config.txt` and ensure `dtparam=i2c_arm=on` is present. (otherwise you get `Make sure I2C is enabled` errors)
+- Py: `sudo apt install -y i2c-tools` for `i2cdetect`
 
 
 # Files to copy to RaspberryPi:
