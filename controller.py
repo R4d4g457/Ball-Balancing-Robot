@@ -120,7 +120,7 @@ class TiltController:
     Servo objects come from original RobotController.
     """
 
-    def __init__(self, robot_controller):
+    def __init__(self, robot_controller, debug=False):
         self.robot = robot_controller
         self.s1 = self.robot.s1
         self.s2 = self.robot.s2
@@ -132,17 +132,13 @@ class TiltController:
         # Instantiate MPU6050 here
         self.imu = MPU6050()
 
-        # Track last update time
-        import time
-
         self.last_time = time.time()
+        self.debug = debug
 
     def update(self):
         """
         Reads MPU6050 internally, computes tilt correction, applies to servos
         """
-        import time
-
         t = time.time()
         dt = t - self.last_time
         self.last_time = t
@@ -161,3 +157,11 @@ class TiltController:
         self.s1.angle = theta1
         self.s2.angle = theta2
         self.s3.angle = theta3
+
+        if self.debug:
+            print(
+                f"IMU pitch={pitch:+6.2f} roll={roll:+6.2f} | "
+                f"PID corr_x={corr_x:+6.2f} corr_y={corr_y:+6.2f} | "
+                f"servos=({theta1:5.1f}, {theta2:5.1f}, {theta3:5.1f})",
+                flush=True,
+            )
