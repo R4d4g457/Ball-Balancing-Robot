@@ -22,8 +22,11 @@ def _env_float(name, default):
 
 
 def main():
+    neutral_angle = _env_float("PYRO_NEUTRAL_ANGLE", 54.0)
+    neutral_blend = _env_float("PYRO_NEUTRAL_BLEND", 1.0)
+
     # Instantiate the original robot controller (sets up servos)
-    robot = RobotController()
+    robot = RobotController(neutral_angle=neutral_angle, neutral_blend=neutral_blend)
 
     # Create the tilt controller, passing the robot instance
     debug = os.environ.get("TILT_DEBUG", "").lower() not in ("", "0", "false", "no")
@@ -32,11 +35,15 @@ def main():
     roll_gain = _env_float("PYRO_ROLL_GAIN", 1.0)
     invert_pitch = _env_bool("PYRO_INVERT_PITCH", False)
     invert_roll = _env_bool("PYRO_INVERT_ROLL", False)
+    pitch_offset = _env_float("PYRO_PITCH_OFFSET", 0.0)
+    roll_offset = _env_float("PYRO_ROLL_OFFSET", 0.0)
     pid_kp = _env_float("PYRO_PID_KP", 0.9)
     pid_ki = _env_float("PYRO_PID_KI", 0.0)
     pid_kd = _env_float("PYRO_PID_KD", 0.03)
+    pid_integral_decay = _env_float("PYRO_PID_DECAY", 0.0)
     pid_max = _env_float("PYRO_PID_MAX_OUT", 15.0)
     output_gain = _env_float("PYRO_OUTPUT_GAIN", 1.0)
+    tilt_limit = _env_float("PYRO_TILT_LIMIT_DEG", 15.0)
 
     controller = TiltController(
         robot,
@@ -46,11 +53,15 @@ def main():
         invert_roll=invert_roll,
         pitch_gain=pitch_gain,
         roll_gain=roll_gain,
+        pitch_offset=pitch_offset,
+        roll_offset=roll_offset,
         pid_kp=pid_kp,
         pid_ki=pid_ki,
         pid_kd=pid_kd,
+        pid_integral_decay=pid_integral_decay,
         pid_max_out=pid_max,
         output_gain=output_gain,
+        tilt_limit_deg=tilt_limit,
     )
     if debug:
         print("TiltController debug logging enabled (TILT_DEBUG set).", flush=True)

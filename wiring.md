@@ -94,6 +94,11 @@ Use the offsets in `RobotController.set_motor_angles` (lines 54–60) to level t
 
 1. Temporarily edit the offsets tuple (e.g. `servo_offsets=(+2.0, -1.5, 0.0)`).
 2. Restart the service (or re-run the manual script) and observe the plate. Repeat until the top plate is level and the ball stays put when idle.
+3. To keep actuators “magnetised” toward the neutral pose (reduce hitting the absolute limits), set `PYRO_NEUTRAL_BLEND` to something between 0.5–0.9. This blends each command with the neutral angle (default 54°) before offsets:
+   - `PYRO_NEUTRAL_BLEND=1.0` → full commanded range (current default).
+   - `PYRO_NEUTRAL_BLEND=0.7` → 70% of the requested excursion around neutral, helping avoid the 19/90° clamps.
+   - Adjust `PYRO_NEUTRAL_ANGLE` if your neutral calibration differs from 54°.
+4. Add the chosen blend/angle values to `scripts/pyro.service` so they persist across reboots.
 
 ## IMU alignment check
 
@@ -103,8 +108,11 @@ Use the offsets in `RobotController.set_motor_angles` (lines 54–60) to level t
    - `PYRO_AXIS_ROT_DEG=…` rotates the IMU frame around the vertical axis (positive values rotate clockwise when looking down). Start with ±30° increments until the response aligns with the platform.
    - `PYRO_INVERT_PITCH=1` or `PYRO_INVERT_ROLL=1` flips individual axes if they run backwards.
    - `PYRO_PITCH_GAIN=…` / `PYRO_ROLL_GAIN=…` scale how aggressively each axis feeds into the PID (use values >1.0 for more correction if the motion feels weak, <1.0 if it overshoots).
+   - `PYRO_PITCH_OFFSET` / `PYRO_ROLL_OFFSET` remove static bias (e.g. if level ground reads `+1.5/-3.5`, set the offsets to those numbers so the transformed values center on zero).
    - `PYRO_PID_KP`, `PYRO_PID_KI`, `PYRO_PID_KD` change the PID controller gains; `PYRO_PID_MAX_OUT` raises/lowers the saturation limit (degrees) before commands feed the kinematics.
-   - `PYRO_OUTPUT_GAIN` multiplies the PID outputs before converting to servo angles if you need stronger motion without altering PID dynamics.
+   - `PYRO_OUTPUT_GAIN` multiplies the PID outputs before converting to servo angles if you need stronger motion without altering PID dynamics. Combine with `PYRO_TILT_LIMIT_DEG` to cap the final demand (e.g. `OUTPUT_GAIN=5` with `TILT_LIMIT_DEG=12` still restricts each axis to ±12°).
+   - `PYRO_PID_DECAY` (e.g. 0.2) bleeds off the integrator each second to avoid all servos sticking at the clamp when the plate stays tilted for a while. Increase it if you notice wind-up.
+   - `PYRO_TILT_LIMIT_DEG` clamps the final tilt demand after gains are applied, preventing the inverse kinematics from requesting impossible poses even with high gains.
 4. Once satisfied, add the chosen variables to `scripts/pyro.service` as extra `Environment=` lines so the service uses the same calibration (e.g. `Environment=PYRO_AXIS_ROT_DEG=15`, `Environment=PYRO_OUTPUT_GAIN=1.3`).
 5. Re-enable the service with `scripts/restart_pyro.sh`.
 
