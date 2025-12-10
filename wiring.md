@@ -5,14 +5,16 @@
 - Add `wpa_supplicant.conf` with WiFi network details via MicroSD card
 - Confirm `$ ssh pyro@pyro.local` works
 - `scp requirements.txt pyro@pyro.local:`
-- Py: `sudo apt-get install pip`
-- Py: `python3 -m venv venv`
-- Py: `. venv/bin/activate`
-- Py: `pip install -r requirements.txt`
-- Py: `sudo raspi-config` --
+- Pi: `sudo apt-get install pip`
+- Pi: `python3 -m venv venv`
+- Pi: `. venv/bin/activate`
+- Pi: `pip install -r requirements.txt`
+- Pi: `sudo raspi-config` --
 Interface Options → I2C → Enable, then reboot), or edit `/boot/config.txt` and ensure `dtparam=i2c_arm=on` is present. (otherwise you get `Make sure I2C is enabled` errors)
-- Py: `sudo apt install -y i2c-tools` for `i2cdetect`
+- Pi: `sudo apt install -y i2c-tools` for `i2cdetect`
 
+# For the legacy version:
+- Pi: `sudo apt install -y libopenblas0`
 
 ## Auto-start on boot (pyro service)
 
