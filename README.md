@@ -47,6 +47,21 @@ The materials needed are:
 | Rubber Foot 12x9x9           | 3        |
 | M5 Washer                    | 6        |
 
+## Legacy IMU controller (camera-free)
+
+If you want to test the original kinematics/control stack without the Flask/GUI layers, but driven directly from the MPU6050, use the legacy entrypoint:
+
+```bash
+python3 main_legacy_imu.py
+```
+
+It reuses the pre-camera `RobotController`/`RobotKinematics` logic (copied into `controller_legacy.py` and `robotKinematics_legacy.py`) and simply maps the IMU pitch/roll into spherical commands. Tune it via environment variables such as:
+
+```
+LEGACY_LOOP_HZ=80 LEGACY_MAX_TILT_DEG=30 LEGACY_KP=1.2 python3 main_legacy_imu.py
+```
+
+This provides a clean baseline for comparing the more feature-rich IMU controller in `main.py`.
 ---
 
 ### Motor Angle Calibration
@@ -77,4 +92,3 @@ Each of the three motors must be calibrated. Follow these exact steps:
    Repeat steps 2 and 3. Re-run the controller, check the plate, and adjust the offsets as needed. Continue this process until the top plate is completely flat and stable.
 
 ---
-
