@@ -61,6 +61,12 @@ It reuses the pre-camera `RobotController`/`RobotKinematics` logic (copied into 
 LEGACY_LOOP_HZ=80 LEGACY_MAX_TILT_DEG=30 LEGACY_KP=1.2 python3 main_legacy_imu.py
 ```
 
+Additional helpers:
+
+- `LEGACY_AXIS_ROT_DEG`, `LEGACY_INVERT_PITCH`, `LEGACY_INVERT_ROLL` align the IMU frame with the servo geometry.
+- `LEGACY_PITCH_OFFSET`, `LEGACY_ROLL_OFFSET` remove static bias before the PID runs.
+- `LEGACY_DEBUG=1` prints raw vs rotated IMU, PID corrections, and commanded spherical angles.
+
 This provides a clean baseline for comparing the more feature-rich IMU controller in `main.py`.
 ---
 
