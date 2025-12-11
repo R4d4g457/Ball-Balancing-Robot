@@ -53,13 +53,17 @@ class LegacyRobotController:
             self.set_motor_angles(*angles)
             time.sleep(max_duration / steps)
 
-    def Goto_time_spherical(self, theta, phi, h, t=0.5):
+    def Goto_time_spherical(self, theta, phi, h, t=0.5, debug=False):
         self.robot.solve_inverse_kinematics_spherical(theta, phi, h)
         target_angles = [
             math.degrees(math.pi * 0.5 - self.robot.theta1),
             math.degrees(math.pi * 0.5 - self.robot.theta2),
             math.degrees(math.pi * 0.5 - self.robot.theta3),
         ]
+        if debug:
+            print(
+                f"angles=({target_angles[0]:.2f}, {target_angles[1]:.2f}, {target_angles[2]:.2f})"
+            )
         self.interpolate_time(target_angles, duration=t)
 
     def Goto_N_time_spherical(self, theta, phi, h):
