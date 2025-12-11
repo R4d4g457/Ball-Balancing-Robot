@@ -1,17 +1,39 @@
+import math
 import os
 import time
-from controller import RobotController  # Original class that creates s1, s2, s3
-from controller import TiltController  # Updated tilt controller with MPU6050
+
+from controller import RobotController
+from imu import MPU6050
+from robotKinematics import RobotKinematics
 
 
-def _env_bool(name, default=False):
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    return value.strip().lower() in ("1", "true", "yes", "on")
+class AxisPID:
+    def __init__(self, kp, ki, kd, max_out):
+        self.kp = kp
+        self.ki = ki
+        self.kd = kd
+        self.max_out = max_out
+        self.integral = 0.0
+        self.prev_err = 0.0
+        self.prev_time = None
+
+    def update(self, error):
+        now = time.time()
+        if self.prev_time is None:
+            dt = 0.01
+        else:
+            dt = max(1e-3, now - self.prev_time)
+        self.prev_time = now
+
+        self.integral += error * dt
+        derivative = (error - self.prev_err) / dt
+        self.prev_err = error
+
+        output = self.kp * error + self.ki * self.integral + self.kd * derivative
+        return max(min(output, self.max_out), -self.max_out)
 
 
-def _env_float(name, default):
+def env_float(name, default):
     value = os.environ.get(name)
     if value is None:
         return default
@@ -21,61 +43,160 @@ def _env_float(name, default):
         return default
 
 
-def main():
-    neutral_angle = _env_float("PYRO_NEUTRAL_ANGLE", 54.0)
-    neutral_blend = _env_float("PYRO_NEUTRAL_BLEND", 1.0)
+def env_bool(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ("1", "true", "yes", "on")
 
-    # Instantiate the original robot controller (sets up servos)
-    robot = RobotController(neutral_angle=neutral_angle, neutral_blend=neutral_blend)
 
-    # Create the tilt controller, passing the robot instance
-    debug = os.environ.get("TILT_DEBUG", "").lower() not in ("", "0", "false", "no")
-    axis_rotation = _env_float("PYRO_AXIS_ROT_DEG", 0.0)
-    pitch_gain = _env_float("PYRO_PITCH_GAIN", 1.0)
-    roll_gain = _env_float("PYRO_ROLL_GAIN", 1.0)
-    invert_pitch = _env_bool("PYRO_INVERT_PITCH", False)
-    invert_roll = _env_bool("PYRO_INVERT_ROLL", False)
-    pitch_offset = _env_float("PYRO_PITCH_OFFSET", 0.0)
-    roll_offset = _env_float("PYRO_ROLL_OFFSET", 0.0)
-    pid_kp = _env_float("PYRO_PID_KP", 0.9)
-    pid_ki = _env_float("PYRO_PID_KI", 0.0)
-    pid_kd = _env_float("PYRO_PID_KD", 0.03)
-    pid_integral_decay = _env_float("PYRO_PID_DECAY", 0.0)
-    pid_max = _env_float("PYRO_PID_MAX_OUT", 15.0)
-    output_gain = _env_float("PYRO_OUTPUT_GAIN", 1.0)
-    tilt_limit = _env_float("PYRO_TILT_LIMIT_DEG", 15.0)
+def env_vector(name):
+    value = os.environ.get(name)
+    if not value:
+        return None
+    try:
+        parts = [float(part.strip()) for part in value.split(",")]
+        if len(parts) != 2:
+            return None
+        return tuple(parts)
+    except ValueError:
+        return None
 
-    controller = TiltController(
-        robot,
-        debug=debug,
-        axis_rotation_deg=axis_rotation,
-        invert_pitch=invert_pitch,
-        invert_roll=invert_roll,
-        pitch_gain=pitch_gain,
-        roll_gain=roll_gain,
-        pitch_offset=pitch_offset,
-        roll_offset=roll_offset,
-        pid_kp=pid_kp,
-        pid_ki=pid_ki,
-        pid_kd=pid_kd,
-        pid_integral_decay=pid_integral_decay,
-        pid_max_out=pid_max,
-        output_gain=output_gain,
-        tilt_limit_deg=tilt_limit,
-    )
-    if debug:
-        print("TiltController debug logging enabled (TILT_DEBUG set).", flush=True)
 
-    dt = 0.01  # Loop period (~100 Hz)
-    time.sleep(1)  # Allow IMU to stabilise
+def env_float_optional(name):
+    value = os.environ.get(name)
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
 
+
+def run():
+    loop_hz = env_float("LOOP_HZ", 100.0)
+    dt = 1.0 / loop_hz
+    max_tilt = env_float("MAX_TILT_DEG", 25.0)
+    kp = env_float("KP", 0.8)
+    ki = env_float("KI", 0.0)
+    kd = env_float("KD", 0.03)
+    debug = env_bool("DEBUG", False)
+    axis_rot_deg = env_float("AXIS_ROT_DEG", 0.0)
+    invert_pitch = env_bool("INVERT_PITCH", False)
+    invert_roll = env_bool("INVERT_ROLL", False)
+    pitch_offset = env_float("PITCH_OFFSET", 0.0)
+    roll_offset = env_float("ROLL_OFFSET", 0.0)
+    cal_a = env_vector("CAL_A")
+    cal_b = env_vector("CAL_B")
+    cal_c = env_vector("CAL_C")
+    cal_targets = {
+        "A": env_float("CAL_A_TARGET_DEG", 300.0),
+        "B": env_float("CAL_B_TARGET_DEG", 60.0),
+        "C": env_float("CAL_C_TARGET_DEG", 180.0),
+    }
+    pitch_alpha_env = env_float_optional("PITCH_ALPHA")
+    roll_alpha_env = env_float_optional("ROLL_ALPHA")
+
+    axis_rot_rad = math.radians(axis_rot_deg)
+    axis_cos = math.cos(axis_rot_rad)
+    axis_sin = math.sin(axis_rot_rad)
+
+    calibrated_matrix = None
+    calibration_vectors = []
+    for name, meas in (("A", cal_a), ("B", cal_b), ("C", cal_c)):
+        if meas is None:
+            continue
+        target_phi = math.radians(cal_targets[name])
+        target_vec = (math.cos(target_phi), math.sin(target_phi))
+        calibration_vectors.append((meas, target_vec))
+
+    if len(calibration_vectors) >= 2:
+        vv00 = vv01 = vv11 = 0.0
+        tv00 = tv01 = tv10 = tv11 = 0.0
+        for (vx, vy), (tx, ty) in calibration_vectors:
+            norm = math.hypot(vx, vy)
+            if norm < 1e-6:
+                continue
+            vx /= norm
+            vy /= norm
+            vv00 += vx * vx
+            vv01 += vx * vy
+            vv11 += vy * vy
+            tv00 += tx * vx
+            tv01 += tx * vy
+            tv10 += ty * vx
+            tv11 += ty * vy
+
+        det = vv00 * vv11 - vv01 * vv01
+        if abs(det) > 1e-9:
+            inv00 = vv11 / det
+            inv01 = -vv01 / det
+            inv11 = vv00 / det
+            inv10 = inv01
+            calibrated_matrix = (
+                (
+                    tv00 * inv00 + tv01 * inv10,
+                    tv00 * inv01 + tv01 * inv11,
+                ),
+                (
+                    tv10 * inv00 + tv11 * inv10,
+                    tv10 * inv01 + tv11 * inv11,
+                ),
+            )
+
+    model = RobotKinematics()
+    robot = RobotController(model, model.lp, model.l1, model.l2, model.lb, debug=debug)
+    imu_kwargs = {}
+    if pitch_alpha_env is not None:
+        imu_kwargs["alpha_pitch"] = pitch_alpha_env
+    if roll_alpha_env is not None:
+        imu_kwargs["alpha_roll"] = roll_alpha_env
+    imu = MPU6050(**imu_kwargs)
+
+    pid_x = AxisPID(kp, ki, kd, max_tilt)
+    pid_y = AxisPID(kp, ki, kd, max_tilt)
+
+    time.sleep(1.0)
     while True:
-        # Controller reads MPU6050 internally, computes PID, updates servos
-        controller.update()
+        pitch, roll = imu.read()
+        raw_pitch, raw_roll = pitch, roll
+        pitch -= pitch_offset
+        roll -= roll_offset
 
-        # Maintain loop rate
+        if invert_pitch:
+            pitch = -pitch
+        if invert_roll:
+            roll = -roll
+
+        if calibrated_matrix:
+            rot_pitch = calibrated_matrix[0][0] * pitch + calibrated_matrix[0][1] * roll
+            rot_roll = calibrated_matrix[1][0] * pitch + calibrated_matrix[1][1] * roll
+        else:
+            rot_pitch = pitch * axis_cos - roll * axis_sin
+            rot_roll = pitch * axis_sin + roll * axis_cos
+
+        pitch = rot_pitch
+        roll = rot_roll
+
+        corr_x = pid_x.update(-pitch)
+        corr_y = pid_y.update(-roll)
+
+        magnitude = math.sqrt(corr_x**2 + corr_y**2)
+        theta = min(max_tilt, magnitude)
+        phi = (math.degrees(math.atan2(corr_y, corr_x)) + 360.0) % 360.0
+
+        if debug:
+            print(
+                f"IMU raw=({raw_pitch:+6.2f}, {raw_roll:+6.2f}) "
+                f"rot=({rot_pitch:+6.2f}, {rot_roll:+6.2f}) "
+                f"| corr=({corr_x:+6.2f}, {corr_y:+6.2f}) "
+                f"-> theta={theta:5.2f} phi={phi:6.2f}",
+                flush=True,
+            )
+
+        robot.Goto_N_time_spherical(theta, phi, model.h)
         time.sleep(dt)
 
 
 if __name__ == "__main__":
-    main()
+    run()

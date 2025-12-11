@@ -47,29 +47,22 @@ The materials needed are:
 | Rubber Foot 12x9x9           | 3        |
 | M5 Washer                    | 6        |
 
-## Legacy IMU controller (camera-free)
+## Running on the Raspberry Pi
 
-If you want to test the original kinematics/control stack without the Flask/GUI layers, but driven directly from the MPU6050, use the legacy entrypoint:
+The IMU-driven PID loop now lives in `main.py`. Launch it with:
 
 ```bash
-python3 main_legacy_imu.py
+python3 main.py
 ```
 
-It reuses the pre-camera `RobotController`/`RobotKinematics` logic (copied into `controller_legacy.py` and `robotKinematics_legacy.py`) and simply maps the IMU pitch/roll into spherical commands. Tune it via environment variables such as:
+Key environment variables you can tune (and set in the systemd service):
 
-```
-LEGACY_LOOP_HZ=80 LEGACY_MAX_TILT_DEG=30 LEGACY_KP=1.2 python3 main_legacy_imu.py
-```
-
-Additional helpers:
-
-- `LEGACY_AXIS_ROT_DEG`, `LEGACY_INVERT_PITCH`, `LEGACY_INVERT_ROLL` align the IMU frame with the servo geometry.
-- `LEGACY_PITCH_OFFSET`, `LEGACY_ROLL_OFFSET` remove static bias before the PID runs.
-- `LEGACY_CAL_A`, `LEGACY_CAL_B`, `LEGACY_CAL_C` let you supply measured `(pitch,roll)` pairs for each servo direction (comma-separated) and the code will solve for the best 2×2 transform that maps them to the desired axes (defaults: A→300°, B→60°, C→180°; override with `LEGACY_CAL_*_TARGET_DEG`).
-- `LEGACY_PITCH_ALPHA`, `LEGACY_ROLL_ALPHA` adjust the complementary filter weighting per axis (lower values trust the accelerometer more, speeding up corrections).
-- `LEGACY_DEBUG=1` prints raw vs rotated IMU, PID corrections, and commanded spherical angles.
-
-This provides a clean baseline for comparing the more feature-rich IMU controller in `main.py`.
+- `LOOP_HZ`, `KP`, `KI`, `KD`, `MAX_TILT_DEG` – PID gains and outer tilt clamp.
+- `AXIS_ROT_DEG`, `INVERT_PITCH`, `INVERT_ROLL` – align the IMU frame with the servo geometry if you aren’t using calibration vectors.
+- `PITCH_OFFSET`, `ROLL_OFFSET` – remove static bias from the IMU readings.
+- `CAL_A`, `CAL_B`, `CAL_C` – provide measured `(pitch,roll)` readings (comma-separated) for each servo direction; the code solves for the best 2×2 transform to align the axes. Override the targets with `CAL_*_TARGET_DEG` if your servo layout differs.
+- `PITCH_ALPHA`, `ROLL_ALPHA` – per-axis complementary filter weighting; lower values trust the accelerometer more.
+- `DEBUG=1` – prints raw vs rotated IMU values, PID corrections, and commanded spherical angles for live tuning.
 ---
 
 ### Motor Angle Calibration

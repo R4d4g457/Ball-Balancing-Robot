@@ -1,51 +1,203 @@
 import math
-
-# Robot geometry constants
-R1 = 60.0
-R2 = 40.0
-L = 100.0
-base_angles = [0, 120, 240]
+import numpy as np
 
 
-# Forward kinematics (approximation)
-def forwardKinematics(theta1, theta2, theta3):
-    t1 = math.radians(theta1)
-    t2 = math.radians(theta2)
-    t3 = math.radians(theta3)
+class RobotKinematics:
+    def __init__(self, lp=7.125, l1=6.20, l2=4.50, lb=4.00, invert=False):
+        self.lp = lp
+        self.l1 = l1
+        self.l2 = l2
+        self.lb = lb
+        self.invert = invert
 
-    nx = (math.sin(t1) + math.sin(t2) + math.sin(t3)) / 3
-    ny = (math.cos(t1) + math.cos(t2) + math.cos(t3)) / 3
-    nz = math.sqrt(max(0.0, 1 - nx * nx - ny * ny))
-    return nx, ny, nz
+        self.maxh = self.compute_maxh() - 0.2
+        self.minh = self.compute_minh() + 0.45
+        self.p = [0.0, 0.0, self.maxh]
+        self.h = (self.maxh + self.minh) / 2
+        self.maxtheta = 10
 
+        self.A1 = [0, 0, 0]
+        self.A2 = [0, 0, 0]
+        self.A3 = [0, 0, 0]
 
-# Inverse kinematics
-def inverseKinematics(nx, ny, nz):
-    angles = []
-    for deg in base_angles:
-        theta = math.radians(deg)
-        bx = math.cos(theta)
-        by = math.sin(theta)
+        self.B1 = [0, 0, 0]
+        self.B2 = [0, 0, 0]
+        self.B3 = [0, 0, 0]
 
-        c = (R1 - R2 * (bx * nx + by * ny)) / (L * nz)
-        c = max(min(c, 1.0), -1.0)
-        angle = math.degrees(math.acos(c))
-        angles.append(angle)
+        self.C1 = [0.0, 0.0, 0.0]
+        self.C2 = [0.0, 0.0, 0.0]
+        self.C3 = [0.0, 0.0, 0.0]
 
-    return angles[0], angles[1], angles[2]
+        self.max_theta(self.h)
+        self.theta1 = 0
+        self.theta2 = 0
+        self.theta3 = 0
 
+    def compute_maxh(self):
+        return math.sqrt(((self.l1 + self.l2) ** 2) - ((self.lp - self.lb) ** 2))
 
-# Helper for MPU6050 tilt
-def tilt_to_servos(tilt_x_deg, tilt_y_deg):
-    tx = math.radians(tilt_x_deg)
-    ty = math.radians(tilt_y_deg)
+    def compute_minh(self):
+        if self.l1 > self.l2:
+            return math.sqrt((self.l1**2) - ((self.lb + self.l2 - self.lp) ** 2))
+        elif self.l2 > self.l1:
+            return math.sqrt(((self.l2 - self.l1) ** 2) - ((self.lp - self.lb) ** 2))
+        else:
+            return 0
 
-    nx = math.sin(tx)
-    ny = math.sin(ty)
-    nz_sq = max(0.0, 1 - nx * nx - ny * ny)
-    nz = math.sqrt(nz_sq)
-    if nz < 1e-3:
-        # Prevent numerical blow-ups when the requested tilt exceeds the kinematic limit
-        nz = 1e-3
+    def solve_top(self, a, b, c, h):
+        if not self.invert:
+            self.A1 = [
+                -(self.lp * c) / (math.sqrt(4 * c**2 + (a - math.sqrt(3) * b) ** 2)),
+                (math.sqrt(3) * self.lp * c) / (math.sqrt(4 * c**2 + (a - math.sqrt(3) * b) ** 2)),
+                h + ((a - math.sqrt(3) * b) * self.lp) / (math.sqrt(4 * c**2 + (a - math.sqrt(3) * b) ** 2)),
+            ]
 
-    return inverseKinematics(nx, ny, nz)
+            self.A2 = [
+                (self.lp * c) / (math.sqrt(c**2 + a**2)),
+                0,
+                h - ((self.lp * a) / (math.sqrt(c**2 + a**2))),
+            ]
+
+            self.A3 = [
+                -(self.lp * c) / (math.sqrt(4 * c**2 + (a + math.sqrt(3) * b) ** 2)),
+                -(math.sqrt(3) * self.lp * c) / (math.sqrt(4 * c**2 + (a + math.sqrt(3) * b) ** 2)),
+                h + ((a + math.sqrt(3) * b) * self.lp) / (math.sqrt(4 * c**2 + (a + math.sqrt(3) * b) ** 2)),
+            ]
+        else:
+            self.A1 = [
+                -(self.lp * c) / (math.sqrt(4 * c**2 + (a - math.sqrt(3) * b) ** 2)),
+                (math.sqrt(3) * self.lp * c) / (math.sqrt(4 * c**2 + (a - math.sqrt(3) * b) ** 2)),
+                h + ((a - math.sqrt(3) * b) * self.lp) / (math.sqrt(4 * c**2 + (a - math.sqrt(3) * b) ** 2)),
+            ]
+
+            self.A2 = [
+                (self.lp * c) / (math.sqrt(c**2 + a**2)),
+                0,
+                h - ((self.lp * a) / (math.sqrt(c**2 + a**2))),
+            ]
+
+            self.A3 = [
+                -(self.lp * c) / (math.sqrt(4 * c**2 + (a + math.sqrt(3) * b) ** 2)),
+                -(math.sqrt(3) * self.lp * c) / (math.sqrt(4 * c**2 + (a + math.sqrt(3) * b) ** 2)),
+                h + ((a + math.sqrt(3) * b) * self.lp) / (math.sqrt(4 * c**2 + (a + math.sqrt(3) * b) ** 2)),
+            ]
+
+    def solve_middle(self):
+        a11, a12, a13 = map(float, self.A1)
+        a21, a22, a23 = map(float, self.A2)
+        a31, a32, a33 = map(float, self.A3)
+
+        p1 = (-a11 + math.sqrt(3) * a12 - 2 * self.lb) / a13
+        q1 = (a11**2 + a12**2 + a13**2 + self.l2**2 - self.l1**2 - self.lb**2) / (2 * a13)
+        r1 = p1**2 + 4
+        s1 = 2 * p1 * q1 + 4 * self.lb
+        t1 = q1**2 + self.lb**2 - self.l2**2
+
+        p2 = (self.lb - a21) / a23
+        q2 = (a21**2 + a23**2 - self.lb**2 + self.l2**2 - self.l1**2) / (2 * a23)
+        r2 = p2**2 + 1
+        s2 = 2 * (p2 * q2 - self.lb)
+        t2 = q2**2 - self.l2**2 + self.lb**2
+
+        p3 = (-a31 - math.sqrt(3) * a32 - 2 * self.lb) / a33
+        q3 = (a31**2 + a32**2 + a33**2 + self.l2**2 - self.l1**2 - self.lb**2) / (2 * a33)
+        r3 = p3**2 + 4
+        s3 = 2 * p3 * q3 + 4 * self.lb
+        t3 = q3**2 + self.lb**2 - self.l2**2
+
+        if not self.invert:
+            c11 = (-s1 - math.sqrt(s1**2 - 4 * r1 * t1)) / (2 * r1)
+            c12 = -math.sqrt(3) * c11
+            c13 = math.sqrt(self.l2**2 - 4 * (c11**2) - 4 * self.lb * c11 - self.lb**2)
+            self.C1 = [c11, c12, c13]
+
+            c21 = (-s2 + math.sqrt(s2**2 - 4 * r2 * t2)) / (2 * r2)
+            c22 = 0
+            c23 = math.sqrt(self.l2**2 - (c21 - self.lb) ** 2)
+            self.C2 = [c21, c22, c23]
+
+            c31 = (-s3 - math.sqrt(s3**2 - 4 * r3 * t3)) / (2 * r3)
+            c32 = math.sqrt(3) * c31
+            c33 = math.sqrt(self.l2**2 - 4 * (c31**2) - 4 * self.lb * c31 - self.lb**2)
+            self.C3 = [c31, c32, c33]
+        else:
+            c11 = (-s1 - math.sqrt(s1**2 - 4 * r1 * t1)) / (2 * r1)
+            c12 = -math.sqrt(3) * c11
+            c13 = math.sqrt(self.l2**2 - 4 * (c11**2) - 4 * self.lb * c11 - self.lb**2)
+            self.C1 = [c11, c12, -c13]
+
+            c21 = (-s2 + math.sqrt(s2**2 - 4 * r2 * t2)) / (2 * r2)
+            c22 = 0
+            c23 = math.sqrt(self.l2**2 - (c21 - self.lb) ** 2)
+            self.C2 = [c21, c22, -c23]
+
+            c31 = (-s3 - math.sqrt(s3**2 - 4 * r3 * t3)) / (2 * r3)
+            c32 = math.sqrt(3) * c31
+            c33 = math.sqrt(self.l2**2 - 4 * (c31**2) - 4 * self.lb * c31 - self.lb**2)
+            self.C3 = [c31, c32, -c33]
+
+    def solve_inverse_kinematics_vector(self, a, b, c, h):
+        self.B1 = [-0.5 * self.lb, math.sqrt(3) * 0.5 * self.lb, 0]
+        self.B2 = [self.lb, 0, 0]
+        self.B3 = [-0.5 * self.lb, -1 * math.sqrt(3) * 0.5 * self.lb, 0]
+
+        self.solve_top(a, b, c, h)
+        self.solve_middle()
+
+        self.theta1 = math.pi / 2 - math.atan2(math.sqrt(self.C1[0] ** 2 + self.C1[1] ** 2) - self.lb, self.C1[2])
+        self.theta2 = math.atan2(self.C2[2], self.C2[0] - self.lb)
+        self.theta3 = math.pi / 2 - math.atan2(math.sqrt(self.C3[0] ** 2 + self.C3[1] ** 2) - self.lb, self.C3[2])
+
+    def solve_inverse_kinematics_spherical(self, theta, phi, h):
+        self.h = h
+        self.max_theta(h)
+
+        theta = min(theta, self.maxtheta)
+
+        a = math.sin(math.radians(theta)) * math.cos(math.radians(phi))
+        b = math.sin(math.radians(theta)) * math.sin(math.radians(phi))
+        c = math.cos(math.radians(theta))
+
+        try:
+            self.solve_inverse_kinematics_vector(a, b, c, h)
+        except Exception:
+            pass
+
+    def max_theta(self, h, tol=1e-3):
+        theta_low, theta_high = 0.0, math.radians(20)
+
+        def valid(theta):
+            c = math.cos(theta)
+            for s in (1, -1):
+                a21 = self.lp * c
+                a23 = h - self.lp * (s * math.sin(theta))
+                try:
+                    p2 = (self.lb - a21) / a23
+                    q2 = (a21**2 + a23**2 - self.lb**2 + self.l2**2 - self.l1**2) / (2 * a23)
+                    r2 = p2**2 + 1
+                    s2 = 2 * (p2 * q2 - self.lb)
+                    t2 = q2**2 - self.l2**2 + self.lb**2
+                    disc = s2**2 - 4 * r2 * t2
+                    if disc < 0:
+                        return False
+                    c21 = (-s2 + math.sqrt(disc)) / (2 * r2)
+                    delta = self.l2**2 - (c21 - self.lb) ** 2
+                    if delta < 0:
+                        return False
+                    c23 = math.sqrt(delta)
+                    if abs(math.sqrt((a21 - c21) ** 2 + (a23 - c23) ** 2) - self.l1) > 1e-3:
+                        return False
+                    if abs(math.sqrt((self.lb - c21) ** 2 + c23**2) - self.l2) > 1e-3:
+                        return False
+                except Exception:
+                    return False
+            return True
+
+        while theta_high - theta_low > tol:
+            theta_mid = (theta_low + theta_high) / 2
+            if valid(theta_mid):
+                theta_low = theta_mid
+            else:
+                theta_high = theta_mid
+
+        self.maxtheta = max(0, math.degrees(round(theta_low, 4)) - 0.5)
