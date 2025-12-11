@@ -100,6 +100,11 @@ def run():
         vv00 = vv01 = vv11 = 0.0
         tv00 = tv01 = tv10 = tv11 = 0.0
         for (vx, vy), (tx, ty) in calibration_vectors:
+            norm = math.hypot(vx, vy)
+            if norm < 1e-6:
+                continue
+            vx /= norm
+            vy /= norm
             vv00 += vx * vx
             vv01 += vx * vy
             vv11 += vy * vy
